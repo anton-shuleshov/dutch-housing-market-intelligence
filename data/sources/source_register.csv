@@ -1,0 +1,11 @@
+topic,dataset_id,publisher,variables,period,url,verification_status,caveat
+prices,83625NED,CBS/Kadaster,Average sold home price by region,1995-2025,https://www.cbs.nl/nl-nl/cijfers/detail/83625NED,Verified table and methodology,Average transaction price not price index
+housing_stock,86286NED,CBS,Owner occupied/rental/corporation housing stock by municipality,2021-2026,https://www.cbs.nl/nl-nl/cijfers/detail/86286NED,Verified table and methodology,Corporation-owned not identical to regulated social rentals
+income,86380NED,CBS,Household income by region,2011-2025 preliminary,https://www.cbs.nl/nl-nl/cijfers/detail/86380NED,Verified table and methodology,2025 provisional; match year and geographic boundaries
+social_allocations,Trendmonitor 2025,Woonservice,"Applicants, allocations, urgency, care, status holders, household types, rent bands",2021-2025,https://constaterendedat.nl/heemskerk/document/trendmonitor-woonruimteverdeling-ijmond-zuid-kennemerland-2025-93d1f8c3-c2a1-5417-b5ca-b4cd960d6ccb,Verified full-text report with detailed tables,Seven municipalities; not Uitgeest; category overlaps
+corporations,dVi2024,Autoriteit woningcorporaties,Corporation-level financial and stock disclosures,2024,https://data.overheid.nl/dataset/9dceb9da-e2e1-43f9-920f-48fa01831f56,Verified downloadable XLSX link in catalog,Workbook columns not inspected
+house_price_index,85773NED,CBS,Existing house price index,To verify,https://www.cbs.nl/nl-nl/cijfers/detail/85773NED,Candidate; not inspected this pass,Index needed to distinguish price changes from mix effects
+rent,83163NED,CBS,Rental price development,To verify,https://www.cbs.nl/nl-nl/cijfers/detail/83163NED,Candidate; not inspected this pass,Rent increase is not rent level
+construction,82235NED,CBS,Housing stock additions and removals,To verify,https://www.cbs.nl/nl-nl/cijfers/detail/82235NED,Candidate; not inspected this pass,Need municipality and year checks
+permits,83671NED,CBS,Building permits,To verify,https://www.cbs.nl/nl-nl/cijfers/detail/83671NED,Candidate; not inspected this pass,Permit does not equal completed home
+mortgage,DNB rates,DNB,Mortgage interest rates,To verify,https://www.dnb.nl/statistieken/dashboards/woninghypotheken/hypotheekrentes-banken/,Candidate; not inspected this pass,Scenario calculation not mortgage eligibility
