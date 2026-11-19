@@ -1,0 +1,9 @@
+.DS_Store
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+*.html_files/
+*.utf8.md
+renv/library/
+renv/staging/
