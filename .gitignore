@@ -1,9 +1,14 @@
-.DS_Store
+.Rproj.user/
 .Rhistory
 .RData
 .Ruserdata
-.Rproj.user/
-*.html_files/
-*.utf8.md
-renv/library/
-renv/staging/
+.DS_Store
+*.html.md
+*.knit.md
+*_cache/
+*_files/
+# Large original archives are included in the downloadable full local bundle,
+# but need not be committed to GitHub because processed CSVs are tracked.
+data/raw/cbs/*.zip
+data/raw/corporations/*.xlsx
+data/raw/reports/*.pdf
