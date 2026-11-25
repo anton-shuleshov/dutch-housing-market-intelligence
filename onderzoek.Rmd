@@ -1,0 +1,165 @@
+---
+title: "Onderzoek — Dutch Housing Market Intelligence"
+subtitle: "Verkennende analyse, datavalidatie en reproduceerbaarheid"
+author: "Anton Shuleshov"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, warning=TRUE, message=FALSE, fig.width=10,fig.height=5.5)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+get_csv <- function(filename) read_csv(file.path('data','processed',filename),show_col_types=FALSE)
+```
+
+# Onderzoeksvraag
+
+**Hoe ontwikkelen verkoopprijzen, de verhouding tussen verkoopprijzen en huishoudinkomens en sociale huurtoewijzingen zich in Nederland, met speciale aandacht voor Noord-Holland?**
+
+Dit document beschrijft een reproduceerbaar onderzoek. De leesbare managementrapportage staat in `product.Rmd`.
+
+# Data ophalen en selecteren
+
+De CBS-archieven hebben lange `Observations.csv`-tabellen met codewaarden. De codes zijn vertaald met `RegioSCodes.csv`, `MeasureCodes.csv` en `PeriodenCodes.csv`. `scripts/prepare_cbs_zips.py` bevat alle expliciete filters; dit voorkomt dat regionale totalen worden opgeteld bij gemeentelijke cijfers.
+
+```{r data-load}
+prices <- get_csv('cbs_municipal_sale_prices.csv')
+income <- get_csv('cbs_municipal_income.csv')
+aff <- get_csv('cbs_price_to_income_ratio.csv')
+index <- get_csv('cbs_national_house_price_index_monthly.csv')
+housing <- get_csv('cbs_national_housing_stock_mutations.csv')
+rent <- get_csv('cbs_national_rent_increase.csv')
+permits <- get_csv('cbs_municipal_permits.csv')
+alloc <- get_csv('woonservice_allocations_2025.csv')
+alloc_year <- get_csv('woonservice_allocation_yearly_2021_2025.csv')
+```
+
+# Data-inspectie en validatie
+
+```{r row-counts}
+tibble(dataset=c('Verkoopprijzen','Inkomen','Prijs/inkomen','Nationale prijsindex',
+                 'Mutaties voorraad','Huurverhogingen','Vergunningen','Woonservice gemeenten'),
+       rows=c(nrow(prices),nrow(income),nrow(aff),nrow(index),
+              nrow(housing),nrow(rent),nrow(permits),nrow(alloc)))
+```
+
+## Ontbrekende waarden
+
+```{r missing}
+bind_rows(
+  lapply(names(aff),function(n) tibble(column=n,missing=sum(is.na(aff[[n]])),
+                                       missing_pct=round(mean(is.na(aff[[n]]))*100,1)))
+)
+```
+
+## Uniciteit van sleutels en controle Woonservice
+
+```{r data-constraints}
+tibble(
+  check=c('Dubbele prijs-jaar/regio sleutels','Dubbele inkomenssleutels',
+          'Dubbele prijs/inkomen sleutels','Onbekende ratios',
+          'Woonservice: verschil aanbod + bemiddeling',
+          'Woonservice: verschil urgentiekanalen'),
+  n=c(sum(duplicated(prices[c('year','region_code')])),
+      sum(duplicated(income[c('year','region_code','income_measure')])),
+      sum(duplicated(aff[c('year','region_code')])),
+      sum(!is.finite(aff$price_to_income_ratio)),
+      sum(abs(alloc$offer_model+alloc$direct_mediation-alloc$total_allocations)),
+      sum(abs(alloc$urgency_offer_model+alloc$urgency_mediation-alloc$urgency_total))
+  )
+)
+stopifnot(sum(alloc$total_allocations)==2666,
+          sum(alloc$offer_model)==2033,
+          sum(alloc$direct_mediation)==633,
+          sum(alloc$urgency_total)==546)
+```
+
+## Jaarstatus en dekking
+
+```{r statuses}
+income |> count(year,status) |> arrange(year,status)
+```
+
+**N.B.** CBS 86380NED publiceert 2025 als `Voorlopig`; in het eindrapport wordt dit expliciet vermeld. Het bestand gebruikt de regio-indeling 2026. Gemeentelijke grenzen en ontbrekende gebieden moeten bij uitbreiding apart worden onderzocht.
+
+# Trendanalyse: gemiddelde verkoopprijzen
+
+```{r exploration-price-lines}
+prices |> filter(municipality %in% c('Amsterdam','Haarlem','Heemstede','Uitgeest','Alkmaar')) |>
+  ggplot(aes(year,average_sale_price_eur,color=municipality)) +
+  geom_line(linewidth=1) + geom_point() +
+  labs(title='Verkoopprijzen per jaar',x='Jaar',y='Gemiddelde verkoopprijs (€)',color='Gemeente') +
+  theme_minimal()
+```
+
+# Inkomen en indicatieve prijs-inkomensverhouding
+
+```{r income-check}
+aff |> filter(year==2025) |>
+  arrange(desc(price_to_income_ratio)) |>
+  select(municipality,average_sale_price_eur,median_disposable_income_eur,
+         price_to_income_ratio,income_status)
+```
+
+```{r trend-affordability}
+aff |> filter(municipality %in% c('Haarlem','Uitgeest','Amsterdam','Alkmaar')) |>
+  ggplot(aes(year,price_to_income_ratio,color=municipality)) +
+  geom_line(linewidth=1) + geom_point() +
+  labs(title='Verkennende prijs/inkomensratio',x='Jaar',y='Prijs gedeeld door mediaan jaarinkomen',color='Gemeente') +
+  theme_minimal()
+```
+
+**Interpretatie:** dit is géén officiële definitie van betaalbaarheid. De gemiddelde verkochte woning en het mediane inkomen van alle huishoudens meten verschillende populaties.
+
+# Landelijke woningbouw en huurontwikkeling
+
+```{r construction}
+housing |> filter(metric %in% c('new_construction','demolition'),year>=2015) |>
+  ggplot(aes(year,value,color=metric)) + geom_line(linewidth=1) + geom_point() +
+  labs(title='Nieuwbouw versus sloop',y='Woningen',x='Jaar') + theme_minimal()
+```
+
+```{r rent-check}
+rent |> arrange(year,measure)
+```
+
+De huurverhogingsreeks geeft percentages van jaarlijkse veranderingen, **geen huurprijs per maand**. De `permits`-reeks gaat over verleende vergunningen en niet over gerealiseerde nieuwbouw.
+
+# Sociale huurtoewijzingen: Woonservice
+
+```{r allocations}
+alloc |> mutate(aandeel_urgentie=100*urgency_total/total_allocations) |>
+  select(municipality,total_allocations,offer_model,direct_mediation,
+         urgency_total,statusholders_via_mediation,aandeel_urgentie)
+```
+
+```{r social-consistency}
+alloc_year |> ggplot(aes(year,allocations)) + geom_col(fill='#396b89') +
+  labs(title='Verhuringen IJmond/Zuid-Kennemerland',subtitle='Let op: gewijzigde systeemdekking vanaf 2023',
+       y='Verhuringen',x='Jaar') + theme_minimal()
+```
+
+De waargenomen verschillen worden niet geïnterpreteerd als zuivere gedragsverandering: de dekking veranderde toen Woonopmaat in juni 2023 aansloot. Urgentie en statushouders overlappen begripsmatig met toewijzingsroutes; ze worden niet als exclusieve onderdelen opgeteld.
+
+# Methodologische besluiten
+
+1. Het CBS-prijsregister `83625NED` wordt gebruikt voor gemeentelijke gemiddelden; `85773NED` voor een landelijke, gewogen prijsindex. Zij meten niet hetzelfde.
+2. Inkomen uit `86380NED` = particuliere huishoudens inclusief studenten, totaal huishoudenkenmerk, mediaan besteedbaar inkomen in **duizend euro** (omgezet naar hele euro's).
+3. Voor prijs/inkomen koppelen we dezelfde regio-code en hetzelfde jaar; geen koppeling op een vrijblijvende naamstring.
+4. Nationale BAG-woningbouwgegevens `82235NED` worden niet op gemeentelijke schaal geïnterpreteerd.
+5. Woonservice is beperkt tot zeven gemeenten; Uitgeest en Amsterdam vallen hierbuiten.
+6. 86286NED (eigendom woningvoorraad) en dVi2024 zijn voor vervolgonderzoek gereserveerd; ze zijn geen bron van de huidige grafieken.
+7. De verwerkte CSV's zijn te reproduceren met `scripts/prepare_cbs_zips.py`; het regionale PDF-overzicht is met paginaverwijzing ingevoerd.
+8. Conclusies zijn beschrijvend, niet causaal.
+
+# Bronnen
+
+CBS 83625NED, 86380NED, 85773NED, 82235NED, 83163NED, 83671NED; Woonservice Trendmonitor IJmond/Zuid-Kennemerland 2025, in het bijzonder tabellen 2-1, 4-2 en 4-3 (pp. 10 en 24). Zie `docs/methodology.md` en `data/sources/source_register.csv`.
