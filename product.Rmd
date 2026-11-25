@@ -1,0 +1,264 @@
+---
+title: "Dutch Housing Market Intelligence"
+subtitle: "Woningprijzen, betaalbaarheid en sociale huur in Nederland"
+author: "Anton Shuleshov | Inholland Academy — Big Data Business Analist"
+date: "`r format(Sys.Date(), '%d-%m-%Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    df_print: paged
+    self_contained: true
+---
+
+<style>
+body {font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #24334a;}
+.main-container {max-width: 1160px !important;}
+h1, h2, h3 {color: #0d2746; font-weight: 700;}
+h1.title {font-size: 38px; letter-spacing: -.025em;}
+h3.subtitle {color: #53718e; font-size: 20px;}
+blockquote {border-left: 4px solid #e6aa58; background: #f9f8f5; padding: 12px 16px;}
+table {font-size: 14px;}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, fig.width=10.5,
+                      fig.height=5.8, out.width='100%', dpi=130)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(scales)
+
+read_data <- function(name) {
+  path <- file.path('data', 'processed', name)
+  if (!file.exists(path)) stop('Ontbrekend databestand: ', path,
+                                '. Start vanuit de projectmap; zie README.md.')
+  read_csv(path, show_col_types=FALSE)
+}
+prices <- read_data('cbs_municipal_sale_prices.csv')
+income <- read_data('cbs_municipal_income.csv')
+aff <- read_data('cbs_price_to_income_ratio.csv')
+index <- read_data('cbs_national_house_price_index_monthly.csv')
+housing <- read_data('cbs_national_housing_stock_mutations.csv')
+rent <- read_data('cbs_national_rent_increase.csv')
+alloc <- read_data('woonservice_allocations_2025.csv')
+alloc_year <- read_data('woonservice_allocation_yearly_2021_2025.csv')
+permits <- read_data('cbs_municipal_permits.csv')
+
+focus <- c('Amsterdam','Haarlem','Alkmaar','Uitgeest','Heemstede',
+           'Beverwijk','Heemskerk','Velsen','Zandvoort','Bloemendaal')
+accent <- '#1c6d88'
+fmt_euro <- function(x) paste0('€ ',format(round(x),big.mark='.',decimal.mark=',',trim=TRUE))
+latest_prices <- prices |> filter(year == 2025, municipality %in% focus)
+latest_aff <- aff |> filter(year == 2025, municipality %in% focus)
+lowest_ratio <- latest_aff |> slice_min(price_to_income_ratio,n=1,with_ties=FALSE)
+highest_ratio <- latest_aff |> slice_max(price_to_income_ratio,n=1,with_ties=FALSE)
+selected_2025 <- latest_prices |> filter(municipality %in% c('Amsterdam','Haarlem','Alkmaar','Uitgeest')) |>
+  arrange(desc(average_sale_price_eur))
+stopifnot(sum(alloc$total_allocations) == 2666,
+          sum(alloc$offer_model) == 2033,
+          sum(alloc$direct_mediation) == 633,
+          sum(alloc$urgency_total) == 546,
+          all(!is.na(aff$price_to_income_ratio)))
+```
+
+# Managementsamenvatting
+
+De Nederlandse woningmarkt is niet met één indicator te beschrijven. De **gemiddelde verkoopprijs** wordt mede beïnvloed door het type woningen dat in een jaar wordt verkocht. De **prijsindex bestaande koopwoningen** probeert juist de prijsontwikkeling beter te isoleren. Inkomen, huurtoewijzingen en nieuwbouw laten andere dimensies van de woningmarkt zien.
+
+Deze analyse gebruikt officiële CBS-bulkbestanden en een regionale Woonservice-rapportage. De vergelijking concentreert zich op tien gemeenten, met nadruk op Noord-Holland. De prijs-inkomensverhouding is een **indicatieve verhouding** en geen officiële maatstaf voor hypotheekgeschiktheid. De inkomenscijfers over 2025 zijn bovendien **voorlopig**.
+
+> **Kernvraag:** Hoe ontwikkelen de Nederlandse woningprijzen en de verhouding tussen verkoopprijzen en huishoudinkomens zich, en wat leren regionale sociale huurtoewijzingen ons over de woningmarktdruk?
+
+# Context, definities en databronnen
+
+Dit rapport vergelijkt verschillende datasets op hun eigen schaal en met hun eigen definitie. Het CBS publiceert verkoopprijzen op gemeentelijk niveau; de landelijke prijsindex is hier een afzonderlijke tijdreeks. De regionale Woonservice-cijfers omvatten **Beverwijk, Bloemendaal, Haarlem, Heemskerk, Heemstede, Velsen en Zandvoort**. **Uitgeest valt niet onder deze regionale Woonservice-rapportage**.
+
+Voor de grafieken gebruiken we de periode 2015–2025 waar mogelijk. Ontwikkelingen worden beschreven, zonder onbewezen causale verbanden te claimen.
+
+# Woningprijzen: landelijk en lokaal
+
+## Landelijke prijsindex bestaande koopwoningen
+
+```{r national-index}
+index |> filter(year <= 2025) |>
+  mutate(date=as.Date(paste0(year_month,'-01'))) |>
+  ggplot(aes(date,index_2020_100)) +
+  geom_area(fill='#d9eaf1',alpha=.8) +
+  geom_line(color=accent,linewidth=1) +
+  scale_x_date(date_breaks='2 years',date_labels='%Y') +
+  labs(title='Landelijke ontwikkeling van de huizenprijsindex',
+       subtitle='Bestaande koopwoningen • CBS • index: 2020 = 100',
+       x=NULL,y='Prijsindex',
+       caption='Bron: CBS 85773NED (maandcijfers). Geen gemeentelijke prijsindex.')  +
+  theme_minimal(base_size=13) +
+  theme(plot.title=element_text(face='bold',size=17,color='#102a49'),
+        plot.subtitle=element_text(color='#5e748c',size=11),
+        plot.caption=element_text(color='#6c7f8f',size=9),
+        panel.grid.minor=element_blank(),legend.position='bottom',
+        plot.margin=margin(12,16,16,12))
+```
+
+De index laat de prijsontwikkeling zien, terwijl een gemiddelde verkoopprijs ook van de samenstelling van de verkopen kan afhangen. Daarom worden beide indicatoren niet als onderling verwisselbaar beschouwd.
+
+## Verschillen tussen gemeenten
+
+```{r prices-cities}
+prices |> filter(municipality %in% c('Amsterdam','Haarlem','Alkmaar','Uitgeest','Heemstede')) |>
+  ggplot(aes(year,average_sale_price_eur,color=municipality)) +
+  geom_line(linewidth=1.15) + geom_point(size=1.7) +
+  scale_y_continuous(labels=label_number(prefix='€ ',big.mark='.',decimal.mark=',')) +
+  scale_x_continuous(breaks=seq(2015,2025,2)) +
+  scale_color_manual(values=c('Alkmaar'='#47948f','Amsterdam'='#aa6a50',
+                              'Haarlem'='#29577c','Heemstede'='#c39a3c','Uitgeest'='#916ab4')) +
+  labs(title='Gemiddelde verkoopprijzen per gemeente',
+       subtitle='Bestaande koopwoningen • geselecteerde gemeenten, 2015–2025',
+       x=NULL,y='Gemiddelde verkoopprijs',color=NULL,
+       caption='Bron: CBS 83625NED. Gevoelig voor veranderende samenstelling van verkochte woningen.')  +
+  theme_minimal(base_size=13) +
+  theme(plot.title=element_text(face='bold',size=17,color='#102a49'),
+        plot.subtitle=element_text(color='#5e748c',size=11),
+        plot.caption=element_text(color='#6c7f8f',size=9),
+        panel.grid.minor=element_blank(),legend.position='bottom',
+        plot.margin=margin(12,16,16,12))
+```
+
+```{r summary-prices}
+selected_2025 |>
+  transmute(Gemeente=municipality,
+            `Gemiddelde verkoopprijs (2025)`=fmt_euro(average_sale_price_eur)) |>
+  knitr::kable(caption='Geselecteerde lokale verkoopprijzen, CBS 83625NED')
+```
+
+# Betaalbaarheid: verkoopprijzen ten opzichte van inkomens
+
+De hier gebruikte indicator deelt de gemiddelde gemeentelijke verkoopprijs door het **mediaan besteedbaar jaarinkomen van particuliere huishoudens** in dezelfde gemeente. Dit is een verkennende vergelijking, **geen hypotheekberekening, huurquote of individuele koopkrachtmeting**. Kopers zijn niet noodzakelijk representatief voor alle huishoudens in de betreffende gemeente.
+
+```{r affordability-2025, fig.height=6.3}
+latest_aff |>
+  mutate(municipality=reorder(municipality,price_to_income_ratio)) |>
+  ggplot(aes(municipality,price_to_income_ratio)) +
+  geom_col(fill=accent,width=.7) +
+  geom_text(aes(label=sprintf('%.1f×',price_to_income_ratio)),hjust=-.18,
+            color='#12304a',fontface='bold',size=3.8) +
+  coord_flip(clip='off') +
+  expand_limits(y=max(latest_aff$price_to_income_ratio)*1.15) +
+  labs(title='Verkoopprijs gedeeld door mediaan besteedbaar jaarinkomen',
+       subtitle='Gemeentelijke verhouding, 2025 • inkomenscijfers voorlopig',
+       x=NULL,y='Prijs-inkomensverhouding (keer)',
+       caption='Bronnen: CBS 83625NED en 86380NED. Beschrijvende proxy; geen betaalbaarheidsnorm.')  +
+  theme_minimal(base_size=13) +
+  theme(plot.title=element_text(face='bold',size=17,color='#102a49'),
+        plot.subtitle=element_text(color='#5e748c',size=11),
+        plot.caption=element_text(color='#6c7f8f',size=9),
+        panel.grid.minor=element_blank(),legend.position='bottom',
+        plot.margin=margin(12,16,16,12))
+```
+
+Van de geselecteerde gemeenten is de verhouding in 2025 het laagst in **`r lowest_ratio$municipality`** (`r sprintf('%.1f',lowest_ratio$price_to_income_ratio)` keer) en het hoogst in **`r highest_ratio$municipality`** (`r sprintf('%.1f',highest_ratio$price_to_income_ratio)` keer). Een hoge verhouding suggereert dat de gemiddelde verkoopprijs relatief hoog is ten opzichte van het mediane huishoudinkomen; de indicator vertelt niet wie de woningen daadwerkelijk koopt.
+
+# Sociale huur: regionale toewijzingen
+
+Woonservice rapporteert voor IJmond/Zuid-Kennemerland in 2025 **2.666 verhuringen**, waarvan **2.033 via het aanbodmodel** en **633 via directe bemiddeling**. Dit zijn aantallen **toewijzingen**, geen voorraad woningen en geen uniek aantal woningzoekenden.
+
+## Aanbodmodel versus bemiddeling
+
+```{r housing-allocations}
+alloc |>
+  select(municipality,offer_model,direct_mediation) |>
+  pivot_longer(-municipality,names_to='route',values_to='n') |>
+  mutate(route=recode(route,offer_model='Aanbodmodel',direct_mediation='Bemiddeling'),
+         municipality=factor(municipality,levels=alloc$municipality)) |>
+  ggplot(aes(municipality,n,fill=route)) +
+  geom_col(width=.75) +
+  scale_fill_manual(values=c('Aanbodmodel'='#236d8c','Bemiddeling'='#e4a553')) +
+  labs(title='Hoe worden sociale huurwoningen toegewezen?',
+       subtitle='Aantal verhuringen per gemeente, 2025',
+       x=NULL,y='Aantal verhuringen',fill=NULL,
+       caption='Bron: Woonservice Trendmonitor 2025, tabel 4-2, p. 24. Uitgeest valt buiten deze regio.') +
+  theme(axis.text.x=element_text(angle=30,hjust=1))  +
+  theme_minimal(base_size=13) +
+  theme(plot.title=element_text(face='bold',size=17,color='#102a49'),
+        plot.subtitle=element_text(color='#5e748c',size=11),
+        plot.caption=element_text(color='#6c7f8f',size=9),
+        panel.grid.minor=element_blank(),legend.position='bottom',
+        plot.margin=margin(12,16,16,12))
+```
+
+## Urgentie en andere voorrangsregels
+
+In 2025 telt de rapportage **546 urgente toewijzingen** (via aanbodmodel of bemiddeling), op een totaal van 2.666 verhuurde woningen. Het percentage verschilt per gemeente. **Statushouders** zijn een doelgroep en **bemiddeling** een toewijzingsroute: dit zijn geen rechtstreeks vergelijkbare of automatisch optelbare categorieën.
+
+```{r urgency-share}
+alloc |>
+  mutate(urgency_share=100*urgency_total/total_allocations,
+         municipality=reorder(municipality,urgency_share)) |>
+  ggplot(aes(municipality,urgency_share)) +
+  geom_col(fill='#c18d45',width=.68) +
+  geom_text(aes(label=paste0(round(urgency_share),'%')),hjust=-.2,fontface='bold',size=3.7) +
+  coord_flip(clip='off') +
+  expand_limits(y=45) +
+  labs(title='Aandeel verhuringen aan urgente woningzoekenden',
+       subtitle='Urgentie via aanbodmodel én bemiddeling, 2025',
+       x=NULL,y='Percentage van alle verhuringen',
+       caption='Bron: Woonservice Trendmonitor 2025, tabel 4-3, p. 24.')  +
+  theme_minimal(base_size=13) +
+  theme(plot.title=element_text(face='bold',size=17,color='#102a49'),
+        plot.subtitle=element_text(color='#5e748c',size=11),
+        plot.caption=element_text(color='#6c7f8f',size=9),
+        panel.grid.minor=element_blank(),legend.position='bottom',
+        plot.margin=margin(12,16,16,12))
+```
+
+## Verschillende perspectieven
+
+Het aantal verhuringen zegt niet hoeveel kans een individuele woningzoekende heeft. Ook **inschrijfduur**, **zoekduur** en **slaagkans** hebben verschillende definities. Het Woonservice-rapport beschrijft bovendien een systeemwijziging door de aansluiting van Woonopmaat in 2023. Jaarcijfers kunnen daardoor niet zonder toelichting als volledig vergelijkbare cohorten worden gezien.
+
+# Nieuwbouw en ontwikkeling van de woningvoorraad
+
+```{r construction-national}
+housing |> filter(metric %in% c('new_construction','demolition'),year>=2015) |>
+  mutate(metric=recode(metric,new_construction='Nieuwbouw',demolition='Sloop')) |>
+  ggplot(aes(year,value,color=metric)) +
+  geom_line(linewidth=1.2) + geom_point(size=1.6) +
+  scale_y_continuous(labels=label_number(big.mark='.',decimal.mark=',')) +
+  scale_color_manual(values=c('Nieuwbouw'='#266f85','Sloop'='#d09b53')) +
+  labs(title='Nieuwbouw en sloop van woningen in Nederland',
+       subtitle='Aantal woningen per jaar • nationale reeks',x=NULL,y='Aantal woningen',color=NULL,
+       caption='Bron: CBS 82235NED. Bouwvergunningen zijn iets anders dan gereedgekomen woningen.')  +
+  theme_minimal(base_size=13) +
+  theme(plot.title=element_text(face='bold',size=17,color='#102a49'),
+        plot.subtitle=element_text(color='#5e748c',size=11),
+        plot.caption=element_text(color='#6c7f8f',size=9),
+        panel.grid.minor=element_blank(),legend.position='bottom',
+        plot.margin=margin(12,16,16,12))
+```
+
+De nationale woningbouwcijfers hebben een andere geografische schaal dan de gemeentelijke verkoopprijzen. Directe causale conclusies over één gemeente zijn daarom niet gerechtvaardigd.
+
+# Discussie en beperkingen
+
+- **Prijs:** gemiddelde verkoopprijzen zijn gevoelig voor het type verkochte woningen; de landelijke index is een andere statistiek.
+- **Inkomen:** het mediane besteedbare huishoudinkomen betreft de lokale huishoudenspopulatie, niet uitsluitend kopers. Inkomen over 2025 is voorlopig.
+- **Sociale huur:** Woonservice betreft zeven specifieke gemeenten; Uitgeest valt er niet onder. Inschrijfduur is niet hetzelfde als voorspelde wachttijd.
+- **Toewijzingen:** urgentie, bemiddeling en doelgroepen mogen niet zonder controle bij elkaar worden opgeteld.
+- **Bouw:** de landelijke nieuwbouw- en sloopcijfers zijn geen gemeentelijke causale verklaring voor prijsontwikkeling.
+- **Nog niet verwerkt:** CBS 86286NED (woningvoorraad naar eigendom), gedetailleerde dVi-verkoopcijfers en aparte regionale wachttijddata voor Uitgeest. Daarover worden geen claims gedaan.
+
+# Conclusie
+
+Deze analyse laat zien dat **prijsontwikkeling, relatieve koopprijs ten opzichte van inkomen en sociale huurtoewijzingen verschillende kanten van dezelfde woningmarkt beschrijven**. Regionale verschillen zijn zichtbaar, maar elke vergelijking vraagt om consistente definities van geografie, tijd en populatie.
+
+Voor beleidsmakers en woningcorporaties zijn **betaalbaarheid, toegang tot huurwoningen en betrouwbare vergelijking van indicatoren** relevante aandachtspunten. Nader onderzoek kan de verschillen uitsplitsen naar woningtype, kopersgroepen en beschikbaarheid van sociale huurwoningen, zodra vergelijkbare data beschikbaar zijn.
+
+# Bronnen en reproduceerbaarheid
+
+- [CBS 83625NED](https://www.cbs.nl/nl-nl/cijfers/detail/83625NED) — gemiddelde verkoopprijzen, gemeenten.
+- [CBS 86380NED](https://www.cbs.nl/nl-nl/cijfers/detail/86380NED) — mediane en gemiddelde besteedbare huishoudinkomens (regio-indeling 2026).
+- [CBS 85773NED](https://www.cbs.nl/nl-nl/cijfers/detail/85773NED) — prijsindex bestaande koopwoningen (2020=100).
+- [CBS 82235NED](https://www.cbs.nl/nl-nl/cijfers/detail/82235NED) — nieuwbouw, sloop en woningvoorraad.
+- [Woonservice Trendmonitor 2025](https://constaterendedat.nl/heemskerk/document/trendmonitor-woonruimteverdeling-ijmond-zuid-kennemerland-2025-93d1f8c3-c2a1-5417-b5ca-b4cd960d6ccb) — regionale toewijzingen, vooral p. 10 en 24.
+
+De bewerkte CSV-bestanden zijn via `scripts/prepare_cbs_zips.py` opnieuw te genereren uit de originele CBS-ZIP's. De PDF-tabel is afzonderlijk gecontroleerd en met paginaverwijzing opgenomen in de bronregistratie. Zie `onderzoek.Rmd` voor analysecontroles en `docs/methodology.md` voor definities.
